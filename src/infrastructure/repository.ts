@@ -1,6 +1,6 @@
+import { State, TaskProps } from "../domain/task";
 import db from "./db/database";
 
-type TaskState = "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED";
 type EventType = "TaskCreated" | "TaskAssigned" | "TaskStateChanged";
 
 export interface CreateTaskDTO {
@@ -9,20 +9,8 @@ export interface CreateTaskDTO {
 	workspaceId: string;
 	title: string;
 	priority: "LOW" | "MEDIUM" | "HIGH";
-	state: TaskState;
+	state: State;
 };
-
-export interface TaskResult {
-	task_id: string;
-	tenant_id: string;
-	workspace_id: string;
-	title: string;
-	priority: "LOW" | "MEDIUM" | "HIGH";
-	state: TaskState;
-	version: number;
-	created_at: string;
-	updated_at: string;
-}
 
 export const insertTask = (data: CreateTaskDTO) => {
 	const stmt = db.prepare(`
@@ -43,9 +31,9 @@ export const insertTask = (data: CreateTaskDTO) => {
 	return { id: result.lastInsertRowid, ...data };
 };
 
-export const findTaskById = (taskId: string): TaskResult => {
+export const findTaskById = (taskId: string): TaskProps => {
 	const stmt = db.prepare(`SELECT * FROM tasks WHERE task_id = @taskId`);
-	return stmt.get({ taskId: taskId }) as TaskResult;
+	return stmt.get({ taskId: taskId }) as TaskProps;
 };
 
 export const getTasks = () => {
@@ -53,7 +41,7 @@ export const getTasks = () => {
 	return stmt.all();
 };
 
-export const updateTask = (taskId: string, version: number, assigneeId?: string, state?: TaskState): number => {
+export const updateTask = (taskId: string, version: number, assigneeId?: string, state?: State): number => {
 	const updates: string[] = [];
 	const params: Record<string, any> = { taskId };
 
