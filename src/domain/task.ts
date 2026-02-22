@@ -4,6 +4,11 @@ export type State =
 	| "DONE"
 	| "CANCELLED";
 
+export type Priority =
+	| "LOW"
+	| "MEDIUM"
+	| "HIGH";
+
 export type Role = "agent" | "manager";
 
 export interface TaskProps {
@@ -11,7 +16,7 @@ export interface TaskProps {
 	tenant_id: string;
 	workspace_id: string;
 	title: string;
-	priority: "LOW" | "MEDIUM" | "HIGH";
+	priority: Priority;
 	state: State;
 	assignee_id: string | null;
 	version: number;

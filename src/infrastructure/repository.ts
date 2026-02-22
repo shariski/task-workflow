@@ -1,18 +1,50 @@
-import { State, TaskProps } from "../domain/task";
-import db from "./db/database";
+import Database from "better-sqlite3";
+import { Priority, State, TaskProps } from "../domain/task";
 
 type EventType = "TaskCreated" | "TaskAssigned" | "TaskStateChanged";
 
 export interface CreateTaskDTO {
-	taskId: string;
 	tenantId: string;
 	workspaceId: string;
+	taskId: string;
 	title: string;
-	priority: "LOW" | "MEDIUM" | "HIGH";
+	priority: Priority;
 	state: State;
 };
 
-export const insertTask = (data: CreateTaskDTO) => {
+export interface FindTaskDTO {
+	taskId: string;
+};
+
+export interface UpdateTaskDTO {
+	taskId: string;
+	version: number;
+	assigneeId: string | null;
+	state: State | null;
+};
+
+export interface InsertIdempotencyKeyDTO {
+	tenantId: string;
+	workspaceId: string;
+	idempotencyKey: string;
+	taskId: string;
+};
+
+export interface GetIdempotencyKeyDTO {
+	tenantId: string;
+	workspaceId: string;
+	idempotencyKey: string;
+};
+
+export interface InsertEventDTO {
+	tenantId: string;
+	workspaceId: string;
+	taskId: string;
+	type: EventType;
+	payload: string;
+};
+
+export const insertTask = (db: Database.Database, data: CreateTaskDTO) => {
 	const stmt = db.prepare(`
 		INSERT INTO tasks (task_id, tenant_id, workspace_id, title, priority, state, version)
 		VALUES (@taskId, @tenantId, @workspaceId, @title, @priority, @state, @version)
@@ -31,28 +63,32 @@ export const insertTask = (data: CreateTaskDTO) => {
 	return { id: result.lastInsertRowid, ...data };
 };
 
-export const findTaskById = (taskId: string): TaskProps => {
-	const stmt = db.prepare(`SELECT * FROM tasks WHERE task_id = @taskId`);
-	return stmt.get({ taskId: taskId }) as TaskProps;
+export interface Transaction {
+	runInTransaction<T>(fn: () => T): T;
 };
 
-export const getTasks = () => {
+export const findTask = (db: Database.Database, data: FindTaskDTO): TaskProps => {
+	const stmt = db.prepare(`SELECT * FROM tasks WHERE task_id = @taskId`);
+	return stmt.get({ taskId: data.taskId }) as TaskProps;
+};
+
+export const getTasks = (db: Database.Database) => {
 	const stmt = db.prepare(`SELECT * FROM tasks`);
 	return stmt.all();
 };
 
-export const updateTask = (taskId: string, version: number, assigneeId?: string, state?: State): number => {
+export const updateTask = (db: Database.Database, data: UpdateTaskDTO): number => {
 	const updates: string[] = [];
-	const params: Record<string, any> = { taskId };
+	const params: Record<string, any> = { taskId: data.taskId };
 
-	if (assigneeId !== undefined) {
+	if (data.assigneeId !== null) {
 		updates.push("assignee_id = @assigneeId");
-		params.assigneeId = assigneeId;
+		params.assigneeId = data.assigneeId;
 	}
 
-	if (state !== undefined) {
+	if (data.state !== null) {
 		updates.push("state = @state");
-		params.state = state;
+		params.state = data.state;
 	}
 
 	if (updates.length === 0) {
@@ -65,7 +101,7 @@ export const updateTask = (taskId: string, version: number, assigneeId?: string,
 		WHERE task_id = @taskId AND version = @version
 	`;
 
-	params.version = version;
+	params.version = data.version;
 
 	const stmt = db.prepare(query);
 	const result = stmt.run(params);
@@ -73,37 +109,33 @@ export const updateTask = (taskId: string, version: number, assigneeId?: string,
 	return result.changes;
 };
 
-export const insertIdempotentKey = (tenantId: string, workspaceId: string, key: string, taskId: string) => {
+export const insertIdempotencyKey = (db: Database.Database, data: InsertIdempotencyKeyDTO) => {
 	const stmt = db.prepare(`
 		INSERT INTO idempotency_keys (tenant_id, workspace_id, idempotency_key, task_id)
-		VALUES (@tenantId, @workspaceId, @key, @taskId)
+		VALUES (@tenantId, @workspaceId, @idempotencyKey, @taskId)
 	`);
-
-	const data = {
-		tenantId,
-		workspaceId,
-		key,
-		taskId
-	};
 
 	const result = stmt.run(data);
 
 	return { id: result.lastInsertRowid, ...data };
 };
 
-export const insertEvent = (tenantId: string, workspaceId: string, taskId: string, type: EventType, payload: any) => {
+export const getIdempotencyKey = (db: Database.Database, data: GetIdempotencyKeyDTO) => {
+	const stmt = db.prepare(`
+		SELECT task_id FROM idempotency_keys
+		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND idempotency_key = @idempotencyKey
+	`)
+
+	const result = stmt.get(data) as { task_id: string };
+
+	return result;
+};
+
+export const insertEvent = (db: Database.Database, data: InsertEventDTO) => {
 	const stmt = db.prepare(`
 		INSERT INTO task_events (tenant_id, workspace_id, task_id, type, payload)
 		VALUES (@tenantId, @workspaceId, @taskId, @type, @payload)
 	`);
-
-	const data = {
-		workspaceId,
-		tenantId,
-		taskId,
-		type,
-		payload
-	};
 
 	const result = stmt.run(data);
 

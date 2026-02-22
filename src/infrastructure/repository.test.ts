@@ -1,5 +1,5 @@
 import { describe, beforeEach, expect } from "vitest";
-import { insertTask, getTasks, findTaskById, updateTask, insertIdempotentKey, insertEvent } from "./repository";
+import { insertTask, getTasks, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey } from "./repository";
 import { v4 as uuidv4 } from "uuid";
 import db from "./db/database"
 
@@ -11,7 +11,7 @@ describe("Repository", () => {
 	it("should create a task", () => {
 		const taskId = uuidv4();
 
-		const task = insertTask({
+		const task = insertTask(db, {
 			taskId: taskId,
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -27,7 +27,7 @@ describe("Repository", () => {
 	it("should get a task", () => {
 		const taskId = uuidv4();
 
-		insertTask({
+		insertTask(db, {
 			taskId: taskId,
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -36,14 +36,16 @@ describe("Repository", () => {
 			state: "NEW",
 		});
 
-		const result = findTaskById(taskId);
+		const result = findTask(db, {
+			taskId: taskId
+		});
 
 		expect(result).toBeDefined();
 		expect(result.task_id).toBe(taskId);
 	});
 
 	it("should return all tasks", () => {
-		insertTask({
+		insertTask(db, {
 			taskId: uuidv4(),
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -51,7 +53,7 @@ describe("Repository", () => {
 			priority: "HIGH",
 			state: "NEW",
 		});
-		insertTask({
+		insertTask(db, {
 			taskId: uuidv4(),
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -60,14 +62,14 @@ describe("Repository", () => {
 			state: "NEW",
 		});
 
-		const tasks = getTasks();
+		const tasks = getTasks(db);
 
 		expect(tasks.length).toBe(2);
 	});
 
 	it("should update a task", () => {
 		const taskId = uuidv4();
-		insertTask({
+		insertTask(db, {
 			taskId: taskId,
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -76,7 +78,12 @@ describe("Repository", () => {
 			state: "NEW",
 		});
 
-		const changes = updateTask(taskId, 1, "u_123", "IN_PROGRESS");
+		const changes = updateTask(db, {
+			taskId: taskId,
+			version: 1,
+			assigneeId: "u_123",
+			state: "IN_PROGRESS"
+		});
 
 		expect(changes).toBeDefined();
 		expect(changes).toBe(1);
@@ -84,7 +91,7 @@ describe("Repository", () => {
 
 	it("should not update a task and return error", () => {
 		const taskId = uuidv4();
-		insertTask({
+		insertTask(db, {
 			taskId: taskId,
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -93,14 +100,19 @@ describe("Repository", () => {
 			state: "NEW",
 		});
 
-		expect(() => updateTask(taskId, 1)).toThrow(
+		expect(() => updateTask(db, {
+			taskId: taskId,
+			version: 1,
+			assigneeId: null,
+			state: null
+		})).toThrow(
 			"No fields provided to update"
 		);
 	});
 
-	it("should not update a task", () => {
+	it("should not update a task, version not match", () => {
 		const taskId = uuidv4();
-		insertTask({
+		insertTask(db, {
 			taskId: taskId,
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
@@ -109,7 +121,12 @@ describe("Repository", () => {
 			state: "NEW",
 		});
 
-		const changes = updateTask(taskId, 2, "u_123", "IN_PROGRESS");
+		const changes = updateTask(db, {
+			taskId: taskId,
+			version: 2,
+			assigneeId: "u_123",
+			state: "IN_PROGRESS"
+		});
 
 		expect(changes).toBeDefined();
 		expect(changes).toBe(0);
@@ -121,28 +138,80 @@ describe("Repository", () => {
 		const idempotentKey = uuidv4();
 		const taskId = uuidv4();
 
-		const result = insertIdempotentKey(tenantId, workspaceId, idempotentKey, taskId);
+		const result = insertIdempotencyKey(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			idempotencyKey: idempotentKey,
+			taskId: taskId
+		});
 
 		expect(result).toBeDefined();
 		expect(result.taskId).toBe(taskId);
 	});
 
-	it("should create an idempotent key for two same insert", () => {
+	it("should create one idempotent key for two same inserts", () => {
 		const tenantId = "tenant_001";
 		const workspaceId = "workspace_001";
 		const idempotentKey = uuidv4();
 		const taskId = uuidv4();
 
-		const result = insertIdempotentKey(tenantId, workspaceId, idempotentKey, taskId);
+		const result = insertIdempotencyKey(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			idempotencyKey: idempotentKey,
+			taskId: taskId
+		});
 
 		expect(result).toBeDefined();
 		expect(result.taskId).toBe(taskId);
 
-		expect(() => insertIdempotentKey(tenantId, workspaceId, idempotentKey, taskId)).toThrowError(
+		expect(() => insertIdempotencyKey(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			idempotencyKey: idempotentKey,
+			taskId: taskId
+		})).toThrowError(
 			expect.objectContaining({
 				code: "SQLITE_CONSTRAINT_PRIMARYKEY"
 			})
 		);
+	});
+
+	it("should get an idempotent key", () => {
+		const tenantId = "tenant_001";
+		const workspaceId = "workspace_001";
+		const idempotentKey = uuidv4();
+		const taskId = uuidv4();
+
+		insertIdempotencyKey(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			idempotencyKey: idempotentKey,
+			taskId: taskId
+		});
+
+		const result = getIdempotencyKey(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			idempotencyKey: idempotentKey
+		});
+
+		expect(result).toBeDefined();
+		expect(result.task_id).toBe(taskId);
+	});
+
+	it("should not found idempotent key", () => {
+		const tenantId = "tenant_001";
+		const workspaceId = "workspace_001";
+		const idempotentKey = uuidv4();
+
+		const result = getIdempotencyKey(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			idempotencyKey: idempotentKey
+		});
+
+		expect(result).toBeUndefined();
 	});
 
 	it("should create an event", () => {
@@ -152,7 +221,13 @@ describe("Repository", () => {
 		const type = "TaskCreated";
 		const payload = JSON.stringify({});
 
-		const result = insertEvent(tenantId, workspaceId, taskId, type, payload);
+		const result = insertEvent(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
+			taskId: taskId,
+			type: type,
+			payload: payload
+		});
 
 		expect(result).toBeDefined();
 		expect(result.taskId).toBe(taskId);
