@@ -1,6 +1,6 @@
 import { Priority, State, Task } from "../domain/task";
 import db from "../infrastructure/db/database";
-import { findEvents, findTask, findTasks, getIdempotencyKey, insertEvent, insertIdempotencyKey, insertTask, updateTask } from "../infrastructure/repository";
+import { findAllEvents, findEvents, findTask, findTasks, getIdempotencyKey, insertEvent, insertIdempotencyKey, insertTask, updateTask } from "../infrastructure/repository";
 import { v4 as uuidv4 } from "uuid";
 
 export interface CreateTaskRequest {
@@ -43,6 +43,10 @@ export interface GetTasksRequest {
 	assigneeId?: string;
 	limit: number;
 	cursor?: string;
+};
+
+export interface GetEventsRequest {
+	limit: number;
 };
 
 export const createTask = (data: CreateTaskRequest) => {
@@ -104,7 +108,7 @@ export const assignTask = (data: AssignTaskRequest) => {
 		const task = new Task(taskRecord);
 
 		if (!task.canBeAssigned()) {
-			throw new Error(`Task cannot be assigned, status: ${task.getState()}`)
+			throw new Error(`Task cannot be assigned, status: ${task.getState()} (status-409)`)
 		}
 
 		const changes = updateTask(db, {
@@ -117,7 +121,7 @@ export const assignTask = (data: AssignTaskRequest) => {
 		});
 
 		if (changes === 0) {
-			throw new Error("Version conflict");
+			throw new Error("Version conflict (status-409)");
 		}
 
 		insertEvent(db, {
@@ -157,7 +161,7 @@ export const transitionTask = (data: TransitionTaskRequest) => {
 		});
 
 		if (changes === 0) {
-			throw new Error("Version conflict");
+			throw new Error("Version conflict (status-409)");
 		}
 
 		insertEvent(db, {
@@ -197,6 +201,10 @@ export const getTasks = (data: GetTasksRequest) => {
 		cursor: data.cursor
 	});
 
+	if (tasks.length === 0) {
+		return { data: [], nextCursor: null };
+	}
+
 	const last = tasks[tasks.length - 1];
 	const nextCursor = Buffer.from(
 		JSON.stringify({
@@ -206,4 +214,10 @@ export const getTasks = (data: GetTasksRequest) => {
 	).toString("base64");
 
 	return { data: tasks, nextCursor: nextCursor };
+};
+
+export const getEvents = (data: GetEventsRequest) => {
+	return findAllEvents(db, {
+		limit: data.limit,
+	});
 };

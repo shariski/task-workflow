@@ -55,6 +55,10 @@ export interface FindEventsDTO {
 	limit: number;
 };
 
+export interface FindAllEventsDTO {
+	limit: number;
+};
+
 export interface TaskEventRow {
 	rowid: number;
 	tenant_id: string;
@@ -185,6 +189,22 @@ export const findEvents = (db: Database.Database, data: FindEventsDTO): TaskEven
 	const stmt = db.prepare(`
 		SELECT rowid, * FROM task_events
 		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND task_id = @taskId
+		ORDER BY created_at DESC, rowid DESC
+		LIMIT @limit
+	`);
+
+	const result = stmt.all(data);
+
+	return result as TaskEventRow[];
+};
+
+export const findAllEvents = (db: Database.Database, data: FindAllEventsDTO): TaskEventRow[] => {
+	if (!data.limit) {
+		data.limit = 100;
+	}
+
+	const stmt = db.prepare(`
+		SELECT rowid, * FROM task_events
 		ORDER BY created_at DESC, rowid DESC
 		LIMIT @limit
 	`);

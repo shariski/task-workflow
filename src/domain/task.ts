@@ -55,31 +55,31 @@ export class Task {
 		const current = this.props.state;
 
 		if (!Task.allowedTransitions[current].includes(toState)) {
-			throw new InvalidTransitionError(`Cannot transition from ${current} to ${toState}`);
+			throw new InvalidTransitionError(`Cannot transition from ${current} to ${toState} (status-409)`);
 		}
 
 		// 2️⃣ Role rules
 		if (role === "agent") {
 			if (current === "NEW" && toState === "IN_PROGRESS") {
 				if (this.props.assignee_id !== actorId) {
-					throw new AuthorizationError("Agent can only start tasks assigned to them");
+					throw new AuthorizationError("Agent can only start tasks assigned to them (status-409)");
 				}
 			}
 
 			if (current === "IN_PROGRESS" && toState === "DONE") {
 				if (this.props.assignee_id !== actorId) {
-					throw new AuthorizationError("Agent can only complete tasks assigned to them");
+					throw new AuthorizationError("Agent can only complete tasks assigned to them (status-409)");
 				}
 			}
 
 			if (toState === "CANCELLED") {
-				throw new AuthorizationError("Agent cannot cancel tasks");
+				throw new AuthorizationError("Agent cannot cancel tasks (status-409)");
 			}
 		}
 
 		if (role === "manager") {
 			if (toState !== "CANCELLED") {
-				throw new AuthorizationError("Manager can only cancel tasks");
+				throw new AuthorizationError("Manager can only cancel tasks (status-409)");
 			}
 		}
 
