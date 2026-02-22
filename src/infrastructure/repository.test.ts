@@ -1,5 +1,5 @@
 import { describe, beforeEach, expect } from "vitest";
-import { insertTask, getTasks, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey } from "./repository";
+import { insertTask, getTasks, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey, CreateTaskDTO } from "./repository";
 import { v4 as uuidv4 } from "uuid";
 import db from "./db/database"
 
@@ -26,18 +26,21 @@ describe("Repository", () => {
 
 	it("should get a task", () => {
 		const taskId = uuidv4();
-
-		insertTask(db, {
+		const data: CreateTaskDTO = {
 			taskId: taskId,
 			tenantId: "tenant_001",
 			workspaceId: "workspace_001",
 			title: "Follow up events",
 			priority: "HIGH",
 			state: "NEW",
-		});
+		};
+
+		insertTask(db, data);
 
 		const result = findTask(db, {
-			taskId: taskId
+			tenantId: data.tenantId,
+			workspaceId: data.workspaceId,
+			taskId: data.taskId
 		});
 
 		expect(result).toBeDefined();
@@ -68,17 +71,21 @@ describe("Repository", () => {
 	});
 
 	it("should update a task", () => {
+		const tenantId = "tenant_001";
+		const workspaceId = "workspace_001";
 		const taskId = uuidv4();
 		insertTask(db, {
 			taskId: taskId,
-			tenantId: "tenant_001",
-			workspaceId: "workspace_001",
+			tenantId: tenantId,
+			workspaceId: workspaceId,
 			title: "Follow up events",
 			priority: "HIGH",
 			state: "NEW",
 		});
 
 		const changes = updateTask(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
 			taskId: taskId,
 			version: 1,
 			assigneeId: "u_123",
@@ -90,17 +97,21 @@ describe("Repository", () => {
 	});
 
 	it("should not update a task and return error", () => {
+		const tenantId = "tenant_001";
+		const workspaceId = "workspace_001";
 		const taskId = uuidv4();
 		insertTask(db, {
 			taskId: taskId,
-			tenantId: "tenant_001",
-			workspaceId: "workspace_001",
+			tenantId: tenantId,
+			workspaceId: workspaceId,
 			title: "Follow up events",
 			priority: "HIGH",
 			state: "NEW",
 		});
 
 		expect(() => updateTask(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
 			taskId: taskId,
 			version: 1,
 			assigneeId: null,
@@ -111,17 +122,21 @@ describe("Repository", () => {
 	});
 
 	it("should not update a task, version not match", () => {
+		const tenantId = "tenant_001";
+		const workspaceId = "workspace_001";
 		const taskId = uuidv4();
 		insertTask(db, {
 			taskId: taskId,
-			tenantId: "tenant_001",
-			workspaceId: "workspace_001",
+			tenantId: tenantId,
+			workspaceId: workspaceId,
 			title: "Follow up events",
 			priority: "HIGH",
 			state: "NEW",
 		});
 
 		const changes = updateTask(db, {
+			tenantId: tenantId,
+			workspaceId: workspaceId,
 			taskId: taskId,
 			version: 2,
 			assigneeId: "u_123",

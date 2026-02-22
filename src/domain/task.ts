@@ -85,4 +85,8 @@ export class Task {
 
 		return toState;
 	}
+
+	getState() {
+		return this.props.state;
+	}
 }

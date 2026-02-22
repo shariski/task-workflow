@@ -13,10 +13,14 @@ export interface CreateTaskDTO {
 };
 
 export interface FindTaskDTO {
+	tenantId: string;
+	workspaceId: string;
 	taskId: string;
 };
 
 export interface UpdateTaskDTO {
+	tenantId: string;
+	workspaceId: string;
 	taskId: string;
 	version: number;
 	assigneeId: string | null;
@@ -63,13 +67,12 @@ export const insertTask = (db: Database.Database, data: CreateTaskDTO) => {
 	return { id: result.lastInsertRowid, ...data };
 };
 
-export interface Transaction {
-	runInTransaction<T>(fn: () => T): T;
-};
-
 export const findTask = (db: Database.Database, data: FindTaskDTO): TaskProps => {
-	const stmt = db.prepare(`SELECT * FROM tasks WHERE task_id = @taskId`);
-	return stmt.get({ taskId: data.taskId }) as TaskProps;
+	const stmt = db.prepare(`
+		SELECT * FROM tasks
+		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND task_id = @taskId
+	`);
+	return stmt.get(data) as TaskProps;
 };
 
 export const getTasks = (db: Database.Database) => {
@@ -98,9 +101,11 @@ export const updateTask = (db: Database.Database, data: UpdateTaskDTO): number =
 	const query = `
 		UPDATE tasks
 		SET ${updates.join(", ")}, version = version + 1, updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = @taskId AND version = @version
+		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND task_id = @taskId AND version = @version
 	`;
 
+	params.tenantId = data.tenantId;
+	params.workspaceId = data.workspaceId;
 	params.version = data.version;
 
 	const stmt = db.prepare(query);
