@@ -52,6 +52,39 @@ export interface FindEventsDTO {
 	tenantId: string;
 	workspaceId: string;
 	taskId: string;
+	limit: number;
+};
+
+export interface TaskEventRow {
+	rowid: number;
+	tenant_id: string;
+	workspace_id: string;
+	task_id: string;
+	type: string;
+	payload: string;
+	created_at: string;
+};
+
+export interface ListTasksFilter {
+	tenantId: string;
+	workspaceId: string;
+	state?: State;
+	assigneeId?: string;
+	limit: number;
+	cursor?: string; // base64 encoded cursor
+};
+
+export interface TaskRow {
+	task_id: string;
+	tenant_id: string;
+	workspace_id: string;
+	title: string;
+	priority: Priority;
+	state: State;
+	version: number;
+	assignee_id: string;
+	created_at: string;
+	updated_at: string;
 };
 
 export const insertTask = (db: Database.Database, data: CreateTaskDTO) => {
@@ -79,11 +112,6 @@ export const findTask = (db: Database.Database, data: FindTaskDTO): TaskProps =>
 		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND task_id = @taskId
 	`);
 	return stmt.get(data) as TaskProps;
-};
-
-export const getTasks = (db: Database.Database) => {
-	const stmt = db.prepare(`SELECT * FROM tasks`);
-	return stmt.all();
 };
 
 export const updateTask = (db: Database.Database, data: UpdateTaskDTO): number => {
@@ -153,15 +181,71 @@ export const insertEvent = (db: Database.Database, data: InsertEventDTO) => {
 	return { id: result.lastInsertRowid, ...data };
 };
 
-export const findEvents = (db: Database.Database, data: FindEventsDTO) => {
+export const findEvents = (db: Database.Database, data: FindEventsDTO): TaskEventRow[] => {
 	const stmt = db.prepare(`
 		SELECT rowid, * FROM task_events
 		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND task_id = @taskId
 		ORDER BY created_at DESC, rowid DESC
-		LIMIT 20
+		LIMIT @limit
 	`);
 
 	const result = stmt.all(data);
 
-	return result;
+	return result as TaskEventRow[];
+};
+
+export const findTasks = (db: Database.Database, filter: ListTasksFilter): TaskRow[] => {
+	const conditions: string[] = [
+		"tenant_id = @tenantId",
+		"workspace_id = @workspaceId",
+	];
+
+	const params: any = {
+		tenantId: filter.tenantId,
+		workspaceId: filter.workspaceId,
+		limit: filter.limit,
+	};
+
+	if (filter.state) {
+		conditions.push("state = @state");
+		params.state = filter.state;
+	}
+
+	if (filter.assigneeId) {
+		conditions.push("assignee_id = @assigneeId");
+		params.assigneeId = filter.assigneeId;
+	}
+
+	if (filter.cursor) {
+		const decoded = decodeCursor(filter.cursor);
+
+		conditions.push(`
+			(created_at < @cursorCreatedAt OR
+			(created_at = @cursorCreatedAt AND task_id < @cursorTaskId))
+		`);
+
+		params.cursorCreatedAt = decoded.created_at;
+		params.cursorTaskId = decoded.task_id;
+	}
+
+	const whereClause = conditions.join(" AND ");
+
+	const stmt = db.prepare<TaskRow>(`
+		SELECT *
+		FROM tasks
+		WHERE ${whereClause}
+		ORDER BY created_at DESC, task_id DESC
+		LIMIT @limit
+	`);
+
+	return stmt.all(params) as TaskRow[];
+};
+
+// helper
+const decodeCursor = (cursor: string) => {
+	const decoded = Buffer.from(cursor, "base64").toString("utf-8");
+	return JSON.parse(decoded) as {
+		created_at: string;
+		task_id: string;
+	};
 };

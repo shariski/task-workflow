@@ -1,5 +1,5 @@
 import { describe, beforeEach, expect } from "vitest";
-import { insertTask, getTasks, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey, CreateTaskDTO, findEvents } from "./repository";
+import { insertTask, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey, CreateTaskDTO, findEvents } from "./repository";
 import { v4 as uuidv4 } from "uuid";
 import db from "./db/database"
 
@@ -45,29 +45,6 @@ describe("Repository", () => {
 
 		expect(result).toBeDefined();
 		expect(result.task_id).toBe(taskId);
-	});
-
-	it("should return all tasks", () => {
-		insertTask(db, {
-			taskId: uuidv4(),
-			tenantId: "tenant_001",
-			workspaceId: "workspace_001",
-			title: "Follow up events",
-			priority: "HIGH",
-			state: "NEW",
-		});
-		insertTask(db, {
-			taskId: uuidv4(),
-			tenantId: "tenant_001",
-			workspaceId: "workspace_001",
-			title: "Follow up events",
-			priority: "LOW",
-			state: "NEW",
-		});
-
-		const tasks = getTasks(db);
-
-		expect(tasks.length).toBe(2);
 	});
 
 	it("should update a task", () => {
@@ -286,7 +263,8 @@ describe("findEvents repository", () => {
 		const result = findEvents(db, {
 			tenantId,
 			workspaceId,
-			taskId
+			taskId,
+			limit: 20
 		}) as {
 			rowid: number;
 			created_at: string;
@@ -314,7 +292,8 @@ describe("findEvents repository", () => {
 		const result = findEvents(db, {
 			tenantId,
 			workspaceId,
-			taskId
+			taskId,
+			limit: 20
 		});
 
 		expect(result.length).toBe(20);
@@ -324,7 +303,8 @@ describe("findEvents repository", () => {
 		const result = findEvents(db, {
 			tenantId,
 			workspaceId,
-			taskId
+			taskId,
+			limit: 20
 		});
 
 		expect(result).toEqual([]);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import db from "../infrastructure/db/database";
-import { assignTask, createTask, transitionTask } from "./usecase";
+import { assignTask, createTask, getTask, transitionTask } from "./usecase";
+import { insertEvent } from "../infrastructure/repository";
 
 describe("createTask usecase", () => {
 
@@ -304,4 +305,87 @@ describe("transitionTask usecase (role-based rules)", () => {
 		).toThrow();
 	});
 
+});
+
+describe("getTask usecase", () => {
+	const tenantId = "tenant_1";
+	const workspaceId = "workspace_1";
+
+	beforeEach(() => {
+		db.exec(`
+			DELETE FROM tasks;
+			DELETE FROM idempotency_keys;
+			DELETE FROM task_events;
+		`);
+	});
+
+	it("should return task with one timeline", () => {
+		const created = createTask({
+			tenantId,
+			workspaceId,
+			idempotencyKey: null,
+			role: "agent",
+			title: "Test Task",
+			priority: "HIGH",
+		});
+
+		const result = getTask({
+			tenantId,
+			workspaceId,
+			taskId: created.task_id,
+		});
+
+		expect(result.task_id).toBe(created.task_id);
+		expect(result.timeline).toBeDefined();
+		expect(result.timeline.length).toBe(1);
+	});
+
+	it("should return task with timeline events", () => {
+		const created = createTask({
+			tenantId,
+			workspaceId,
+			idempotencyKey: null,
+			role: "agent",
+			title: "Task With Events",
+			priority: "MEDIUM",
+		});
+
+		// insert 3 events
+		for (let i = 0; i < 3; i++) {
+			insertEvent(db, {
+				tenantId,
+				workspaceId,
+				taskId: created.task_id,
+				type: "TaskCreated",
+				payload: JSON.stringify({ index: i }),
+			});
+		}
+
+		const result = getTask({
+			tenantId,
+			workspaceId,
+			taskId: created.task_id,
+		});
+
+		expect(result.timeline.length).toBe(4);
+
+		// Pastikan DESC (event terbaru di index 0)
+		const rowids = db.prepare(`
+		      SELECT rowid FROM task_events
+		      WHERE task_id = ?
+		      ORDER BY rowid DESC
+		`).all(created.task_id) as { rowid: number }[];
+
+		expect(result.timeline[0].rowid).toBe(rowids[0].rowid);
+	});
+
+	it("should throw if task not found", () => {
+		expect(() =>
+			getTask({
+				tenantId,
+				workspaceId,
+				taskId: "not-exist",
+			})
+		).toThrow("Task not found");
+	});
 });

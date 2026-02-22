@@ -22,7 +22,7 @@ export function initSchema(db: Database.Database) {
 		ON tasks (tenant_id, workspace_id, state, assignee_id);
 
 		CREATE TABLE IF NOT EXISTS task_events (
-			event_id TEXT PRIMARY KEY,
+			event_id INTEGER PRIMARY KEY AUTOINCREMENT,
 			task_id TEXT NOT NULL,
 			tenant_id TEXT NOT NULL,
 			workspace_id TEXT NOT NULL,
