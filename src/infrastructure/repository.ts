@@ -48,6 +48,12 @@ export interface InsertEventDTO {
 	payload: string;
 };
 
+export interface FindEventsDTO {
+	tenantId: string;
+	workspaceId: string;
+	taskId: string;
+};
+
 export const insertTask = (db: Database.Database, data: CreateTaskDTO) => {
 	const stmt = db.prepare(`
 		INSERT INTO tasks (task_id, tenant_id, workspace_id, title, priority, state, version)
@@ -147,3 +153,15 @@ export const insertEvent = (db: Database.Database, data: InsertEventDTO) => {
 	return { id: result.lastInsertRowid, ...data };
 };
 
+export const findEvents = (db: Database.Database, data: FindEventsDTO) => {
+	const stmt = db.prepare(`
+		SELECT rowid, * FROM task_events
+		WHERE tenant_id = @tenantId AND workspace_id = @workspaceId AND task_id = @taskId
+		ORDER BY created_at DESC, rowid DESC
+		LIMIT 20
+	`);
+
+	const result = stmt.all(data);
+
+	return result;
+};

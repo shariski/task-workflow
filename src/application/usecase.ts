@@ -1,4 +1,4 @@
-import { Priority, Task } from "../domain/task";
+import { Priority, State, Task } from "../domain/task";
 import db from "../infrastructure/db/database";
 import { findTask, getIdempotencyKey, insertEvent, insertIdempotencyKey, insertTask, updateTask } from "../infrastructure/repository";
 import { v4 as uuidv4 } from "uuid";
@@ -17,6 +17,16 @@ export interface AssignTaskRequest {
 	workspaceId: string;
 	taskId: string;
 	assigneeId: string;
+	version: number;
+};
+
+export interface TransitionTaskRequest {
+	tenantId: string;
+	workspaceId: string;
+	taskId: string;
+	role: "agent" | "manager";
+	actorId: string;
+	toState: State;
 	version: number;
 };
 
@@ -92,7 +102,7 @@ export const assignTask = (data: AssignTaskRequest) => {
 		});
 
 		if (changes === 0) {
-			throw new Error("Update failed");
+			throw new Error("Version conflict");
 		}
 
 		return findTask(db, { tenantId: data.tenantId, workspaceId: data.workspaceId, taskId: data.taskId });
@@ -101,3 +111,34 @@ export const assignTask = (data: AssignTaskRequest) => {
 	return tx();
 };
 
+export const transitionTask = (data: TransitionTaskRequest) => {
+	const tx = db.transaction(() => {
+		const taskRecord = findTask(db, { tenantId: data.tenantId, workspaceId: data.workspaceId, taskId: data.taskId });
+
+		if (!taskRecord) {
+			throw new Error("Task not found");
+		}
+
+		const task = new Task(taskRecord);
+
+		// validate first
+		task.transition({ toState: data.toState, role: data.role, actorId: data.actorId });
+
+		const changes = updateTask(db, {
+			tenantId: data.tenantId,
+			workspaceId: data.workspaceId,
+			taskId: data.taskId,
+			assigneeId: null,
+			state: data.toState,
+			version: data.version
+		});
+
+		if (changes === 0) {
+			throw new Error("Version conflict");
+		}
+
+		return findTask(db, { tenantId: data.tenantId, workspaceId: data.workspaceId, taskId: data.taskId });
+	});
+
+	return tx();
+};

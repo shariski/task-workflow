@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import db from "../infrastructure/db/database";
-import { assignTask, createTask } from "./usecase";
+import { assignTask, createTask, transitionTask } from "./usecase";
 
 describe("createTask usecase", () => {
 
@@ -164,7 +164,144 @@ describe("assignTask usecase", () => {
 				assigneeId: "user_1",
 				version: 999 // wrong version
 			})
-		).toThrow("Update failed");
+		).toThrow("Version conflict");
+	});
+});
+
+describe("transitionTask usecase (role-based rules)", () => {
+
+	beforeEach(() => {
+		db.exec(`
+			DELETE FROM tasks;
+			DELETE FROM idempotency_keys;
+			DELETE FROM task_events;
+		`);
+	});
+
+	it("agent can start task assigned to them (NEW -> IN_PROGRESS)", () => {
+		const task = createTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			idempotencyKey: null,
+			role: "agent",
+			title: "Agent Start",
+			priority: "HIGH"
+		});
+
+		// assign dulu supaya agent boleh start
+		db.prepare(`
+			UPDATE tasks SET assignee_id = ?
+			WHERE task_id = ?
+		`).run("agent_1", task.task_id);
+
+		const updated = transitionTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			taskId: task.task_id,
+			toState: "IN_PROGRESS",
+			role: "agent",
+			actorId: "agent_1",
+			version: task.version
+		});
+
+		expect(updated.state).toBe("IN_PROGRESS");
+	});
+
+	it("agent cannot start task not assigned to them", () => {
+		const task = createTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			idempotencyKey: null,
+			role: "agent",
+			title: "Wrong Agent",
+			priority: "HIGH"
+		});
+
+		db.prepare(`
+			UPDATE tasks SET assignee_id = ?
+			WHERE task_id = ?
+		`).run("agent_2", task.task_id);
+
+		expect(() =>
+			transitionTask({
+				tenantId: "tenant_1",
+				workspaceId: "workspace_1",
+				taskId: task.task_id,
+				toState: "IN_PROGRESS",
+				role: "agent",
+				actorId: "agent_1",
+				version: task.version
+			})
+		).toThrow();
+	});
+
+	it("agent cannot cancel task", () => {
+		const task = createTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			idempotencyKey: null,
+			role: "agent",
+			title: "Agent Cancel",
+			priority: "LOW"
+		});
+
+		expect(() =>
+			transitionTask({
+				tenantId: "tenant_1",
+				workspaceId: "workspace_1",
+				taskId: task.task_id,
+				toState: "CANCELLED",
+				role: "agent",
+				actorId: "agent_1",
+				version: task.version
+			})
+		).toThrow();
+	});
+
+	it("manager can cancel task", () => {
+		const task = createTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			idempotencyKey: null,
+			role: "agent",
+			title: "Manager Cancel",
+			priority: "LOW"
+		});
+
+		const updated = transitionTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			taskId: task.task_id,
+			toState: "CANCELLED",
+			role: "manager",
+			actorId: "manager_1",
+			version: task.version
+		});
+
+		expect(updated.state).toBe("CANCELLED");
+	});
+
+	it("manager cannot move task to IN_PROGRESS", () => {
+		const task = createTask({
+			tenantId: "tenant_1",
+			workspaceId: "workspace_1",
+			idempotencyKey: null,
+			role: "agent",
+			title: "Manager Invalid",
+			priority: "LOW"
+		});
+
+		expect(() =>
+			transitionTask({
+				tenantId: "tenant_1",
+				workspaceId: "workspace_1",
+				taskId: task.task_id,
+				toState: "IN_PROGRESS",
+				role: "manager",
+				actorId: "manager_1",
+				version: task.version
+			})
+		).toThrow();
 	});
 
 });

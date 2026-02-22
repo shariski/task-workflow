@@ -1,5 +1,5 @@
 import { describe, beforeEach, expect } from "vitest";
-import { insertTask, getTasks, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey, CreateTaskDTO } from "./repository";
+import { insertTask, getTasks, findTask, updateTask, insertIdempotencyKey, insertEvent, getIdempotencyKey, CreateTaskDTO, findEvents } from "./repository";
 import { v4 as uuidv4 } from "uuid";
 import db from "./db/database"
 
@@ -247,4 +247,87 @@ describe("Repository", () => {
 		expect(result).toBeDefined();
 		expect(result.taskId).toBe(taskId);
 	});
+});
+
+describe("findEvents repository", () => {
+
+	const tenantId = "tenant_1";
+	const workspaceId = "workspace_1";
+	const taskId = "task_1";
+
+	beforeEach(() => {
+		db.exec(`DELETE FROM task_events;`);
+	});
+
+	const insertEvent = () => {
+		db.prepare(`
+			INSERT INTO task_events (
+				tenant_id,
+				workspace_id,
+				task_id,
+				type,
+				payload
+			)
+			VALUES (?, ?, ?, ?, ?)
+		`).run(
+			tenantId,
+			workspaceId,
+			taskId,
+			"TestEvent",
+			"{}"
+		);
+	};
+
+	it("should return latest events first (DESC)", () => {
+		insertEvent();
+		insertEvent();
+		insertEvent();
+
+		const result = findEvents(db, {
+			tenantId,
+			workspaceId,
+			taskId
+		}) as {
+			rowid: number;
+			created_at: string;
+		}[];;
+
+		expect(result.length).toBe(3);
+
+		// Event paling baru harus di index 0
+		// Cara cek aman: row terakhir di DB harus jadi pertama
+		const all = db.prepare(`
+			SELECT rowid FROM task_events
+			ORDER BY rowid ASC
+		`).all() as { rowid: number }[];;
+
+		const lastInsertedRowId = all[all.length - 1].rowid;
+
+		expect(result[0].rowid).toBe(lastInsertedRowId);
+	});
+
+	it("should limit result to 20 events", () => {
+		for (let i = 0; i < 25; i++) {
+			insertEvent();
+		}
+
+		const result = findEvents(db, {
+			tenantId,
+			workspaceId,
+			taskId
+		});
+
+		expect(result.length).toBe(20);
+	});
+
+	it("should return empty array if no events", () => {
+		const result = findEvents(db, {
+			tenantId,
+			workspaceId,
+			taskId
+		});
+
+		expect(result).toEqual([]);
+	});
+
 });
